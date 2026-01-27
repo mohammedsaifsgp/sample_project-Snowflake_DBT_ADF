@@ -1,0 +1,201 @@
+Abstract
+“To Build an end-to-end data pipeline where raw data is ingested from Azure Data Lake using Azure Data Factory into Snowflake, transformed using dbt following medallion architecture, and exposed for analytics.”
+Source Files (CSV/JSON)
+        ↓
+Azure Data Lake Gen2
+        ↓
+Azure Data Factory (Copy Activity)
+        ↓
+Snowflake RAW schema
+        ↓
+dbt (staging → intermediate → marts)
+        ↓
+Analytics-ready tables
+Methodology
+Create 3 sample CSV files:
+customers.csv
+customer_id,customer_name,region
+1,Ali,South
+2,John,North
+products.csv
+product_id,product_name,category
+101,Laptop,Electronics
+102,Phone,Electronics
+orders.csv
+order_id,customer_id,product_id,quantity,price,order_date
+1001,1,101,1,50000,2024-01-10
+1002,2,102,2,30000,2024-01-12
+
+Step 2: Snowflake Setup
+Database & Schemas
+CREATE DATABASE SALES_DB;
+
+CREATE SCHEMA RAW;
+CREATE SCHEMA STAGING;
+CREATE SCHEMA MART;
+RAW Tables (Loaded by ADF)
+CREATE TABLE RAW.customers (...);
+CREATE TABLE RAW.products (...);
+CREATE TABLE RAW.orders (...);
+👉 At this stage:
+•	No joins
+•	No calculations
+•	Just raw data
+
+
+Step 3: Azure Data Factory (ADF)
+“ADF is used only for ingestion; transformations are pushed to Snowflake using dbt.”
+Create the Storage Account first, then create Azure Data Factory.
+Why this order makes sense
+•	Storage Account = where the data lives (Blob, ADLS, files, etc.)
+•	Data Factory = the tool that moves / transforms that data
+ADF doesn’t store your data itself — it only connects to existing sources and destinations.
+So when you create Linked Services inside ADF, it needs something already there to connect to.
+
+Step 1: Open Azure Data Factory
+1.	Login to Azure Portal
+2.	Search Data Factories
+3.	Open your Data Factory
+4.	Click Launch Studio
+________________________________________
+Step 2: Create Linked Services (Connections)
+You need connections for source and destination.
+Example: Blob → SQL
+1.	Go to Manage (🔧) → Linked services
+2.	Click New
+3.	Choose Azure Blob Storage
+o	Select subscription
+o	Choose storage account
+o	Test connection → Create
+4.	Again click New
+5.	Choose Azure SQL Database(snowflake)
+o	Enter server, DB, username, password
+o	Test connection → Create
+Step 3: Create Datasets (Data structure)
+Source Dataset (Blob)
+1.	Go to Author (✏️) → + → Dataset
+2.	Select Azure Blob Storage
+3.	Choose file format (CSV / JSON / Parquet)
+4.	Select container and file
+5.	Import schema → Save
+Sink Dataset (SQL)
+1.	+ → Dataset
+2.	Choose Azure SQL Database
+3.	Select table
+4.	Import schema → Save
+Step 4: Create Pipeline
+1.	Go to Author (✏️)
+2.	Click + → Pipeline
+3.	Drag Copy Data activity into canvas
+________________________________________
+Step 5: Configure Copy Activity
+1.	Click Copy Data
+2.	Go to Source tab
+o	Select Blob dataset
+3.	Go to Sink tab
+o	Select SQL dataset
+4.	Mapping tab
+o	Auto-map or manual map columns
+________________________________________
+Step 6: Validate & Debug
+1.	Click Validate
+2.	Click Debug
+3.	Wait for Succeeded status
+Databuild tool
+Step 4: dbt Project Setup
+Create dbt project connected to Snowflake.
+Folder Structure
+models/
+│
+├── staging/
+│   ├── stg_customers.sql
+│   ├── stg_products.sql
+│   └── stg_orders.sql
+│
+├── marts/
+│   └── sales_fact.sql
+________________________________________
+🔹 Step 5: dbt Staging Models
+stg_customers.sql
+SELECT
+  customer_id,
+  customer_name,
+  region
+FROM {{ source('raw', 'customers') }}
+stg_orders.sql
+SELECT
+  order_id,
+  customer_id,
+  product_id,
+  quantity,
+  price,
+  quantity * price AS total_amount,
+  order_date
+FROM {{ source('raw', 'orders') }}
+
+stg_products.sql
+
+SELECT
+  product_id,
+  product_name,
+  category
+FROM {{ source('raw', 'products') }}
+📌 Purpose:
+•	Clean
+•	Rename columns
+•	Add derived fields
+________________________________________
+🧱 Step 6: dbt Mart Model (Business Logic)
+sales_fact.sql
+SELECT
+  o.order_id,
+  c.customer_name,
+  c.region,
+  p.product_name,
+  p.category,
+  o.quantity,
+  o.total_amount,
+  o.order_date
+FROM {{ ref('stg_orders') }} o
+JOIN {{ ref('stg_customers') }} c
+  ON o.customer_id = c.customer_id
+JOIN {{ ref('stg_products') }} p
+  ON o.product_id = p.product_id
+📌 Interview keywords:
+•	Fact table
+•	Business-ready
+•	Analytics optimized
+________________________________________
+✅ Step 7: dbt Tests (Very Important)
+version: 2
+
+models:
+  - name: stg_orders
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+Run:
+dbt test
+dbt run
+________________________________________
+📊 Step 8: Final Output
+Business users can query:
+SELECT region, SUM(total_amount)
+FROM MART.sales_fact
+GROUP BY region;
+________________________________________
+Learning outcomes
+Skill	Covered
+ADF ingestion	✅
+Snowflake schemas	✅
+ELT architecture	✅
+dbt refs & sources	✅
+Testing	
+Interview storytelling	✅
+	✅
+________________________________________
+
+
+
