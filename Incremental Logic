@@ -1,0 +1,15 @@
+INSERT INTO STG_ORDERS
+SELECT
+    ORDER_ID,
+    CUSTOMER_ID,
+    PRODUCT_ID,
+    QUANTITY,
+    PRICE,
+    QUANTITY * PRICE AS TOTAL_AMOUNT,
+    ORDER_DATE
+FROM RAW_ORDERS r
+WHERE r.ORDER_DATE >
+(
+    SELECT COALESCE(MAX(ORDER_DATE), '2026-01-01')  --> From this date all the orders will be fetched to the staging table
+    FROM STG_ORDERS
+);
