@@ -1,0 +1,79 @@
+1)############################## Modify existing dim_customers ####################################
+CREATE OR REPLACE TABLE DIM_CUSTOMERS (
+    CUSTOMER_KEY NUMBER AUTOINCREMENT,
+    CUSTOMER_ID VARCHAR,
+    CUSTOMER_NAME VARCHAR,
+    REGION VARCHAR,
+    START_DATE DATE,
+    END_DATE DATE,
+    CURRENT_FLAG VARCHAR
+);
+
+2)####################################### Initial Load ############################################
+INSERT INTO DIM_CUSTOMERS (
+    CUSTOMER_ID,
+    CUSTOMER_NAME,
+    REGION,
+    START_DATE,
+    END_DATE,
+    CURRENT_FLAG
+)
+SELECT
+    CUSTOMER_ID,
+    CUSTOMER_NAME,
+    REGION,
+    CURRENT_DATE,
+    NULL,
+    'Y'
+FROM STG_CUSTOMERS;
+
+3)###################### HANDLE CHANGES(CORE SCD LOGIC):Assume REGION changed in STG_CUSTOMERS.######################################
+                                Step 3A – Expire old records
+UPDATE DIM_CUSTOMERS d
+SET 
+    END_DATE = CURRENT_DATE,
+    CURRENT_FLAG = 'N'
+FROM STG_CUSTOMERS s
+WHERE d.CUSTOMER_ID = s.CUSTOMER_ID
+AND d.CURRENT_FLAG = 'Y'
+AND (
+        d.CUSTOMER_NAME <> s.CUSTOMER_NAME
+     OR d.REGION <> s.REGION
+);
+
+                              Step 3B – Insert new changed records
+INSERT INTO DIM_CUSTOMERS (
+    CUSTOMER_ID,
+    CUSTOMER_NAME,
+    REGION,
+    START_DATE,
+    END_DATE,
+    CURRENT_FLAG
+)
+SELECT
+    s.CUSTOMER_ID,
+    s.CUSTOMER_NAME,
+    s.REGION,
+    CURRENT_DATE,
+    NULL,
+    'Y'
+FROM STG_CUSTOMERS s
+LEFT JOIN DIM_CUSTOMERS d
+    ON s.CUSTOMER_ID = d.CUSTOMER_ID
+    AND d.CURRENT_FLAG = 'Y'
+WHERE d.CUSTOMER_ID IS NULL
+   OR (
+        d.CUSTOMER_NAME <> s.CUSTOMER_NAME
+     OR d.REGION <> s.REGION
+   );
+
+
+4)########################### MODIFY FACT JOIN  #######################
+NOW FACT MUST JOIN ONLY ACTIVE RECORDS
+
+SELECT *
+FROM STG_ORDERS o
+LEFT JOIN DIM_CUSTOMERS c
+    ON o.CUSTOMER_ID = c.CUSTOMER_ID
+    AND c.CURRENT_FLAG = 'Y';
+
